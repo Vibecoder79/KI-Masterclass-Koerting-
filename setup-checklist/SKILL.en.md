@@ -1,5 +1,6 @@
 ---
 name: setup-checklist
+version: 1.5.0
 description: >
   Use this skill when the user wants to set up, configure, or apply best
   practices to Claude Code. Triggers: "setup", "einrichten", "bootstrapping",
@@ -32,17 +33,35 @@ WHY each setting matters.
 ## Sources
 
 Based on:
-- Claude Code Best Practice Checklist v15 (OWLIST GmbH, April 2026 — Opus-4.7 update)
-- Official Anthropic documentation (code.claude.com/docs/en/model-config)
-- "What's new in Claude Opus 4.7" (platform.claude.com)
+- Claude Code Best Practice Checklist v17 (OWLIST GmbH, June 2026 — Opus-4.8 update)
+- Official Anthropic documentation (all claims verified on 2026-06-02):
+  code.claude.com/docs/en/ {model-config, settings, agent-teams, hooks, env-vars}
 
 History:
 - v14 (Opus 4.6 / Sonnet 4.6): anti-regression setup with
   `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING` against the "adaptive thinking
   regression" from summer 2025 (GitHub Issue #2654, Stella Laurenzo / AMD).
-- v15 (Opus 4.7): adaptive thinking is redesigned and reliable in 4.7 — the
-  anti-regression flag is obsolete. New default is `effortLevel: xhigh`.
-  Agent Teams are GA.
+- v15 (Opus 4.7): adaptive reasoning is redesigned and reliable in 4.7 — the
+  anti-regression flag is obsolete. Default was `effortLevel: xhigh`.
+- v16 (Opus 4.8): default model is Opus 4.8. **The Opus-4.8 default effortLevel
+  is `high`** (no longer `xhigh`); recommendation: `high` as the default,
+  `xhigh` as an opt-in for deep engineering tasks. **CORRECTION vs. v15:** Agent
+  Teams are NOT GA, but per the docs still experimental — the flag
+  `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` turns them on and is NOT obsolete.
+  `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING` only affects 4.6, not 4.7/4.8. Newly
+  documented: verified optional settings keys, new hook events, 1M-context syntax
+  (`opus[1m]`), `ANTHROPIC_SMALL_FAST_MODEL` → `ANTHROPIC_DEFAULT_HAIKU_MODEL`.
+- v17 (completeness pass): permission modes corrected (manual/auto/custom was
+  wrong → default/acceptEdits/plan/auto/dontAsk/bypassPermissions). 16 in-depth
+  feature modules, each individually verified against the docs, under
+  `references/features/*.md` (incl. MCP, subagents, complete hook events, sandbox
+  setup, managed/enterprise). Index in `checklist.yaml` under `feature_modules`.
+  (Module bodies are currently in German.)
+- **Skill v1.3.0 (April 2026, orchestrator mandate):** new section
+  "Arbeitsweise: Agenten-Team" in the global CLAUDE.md template — orchestrator
+  rule (Claude is always lead, delegates to sub-agents), three-tier execution
+  mode (agentic / sub-agents / linear), mandatory mini-briefing per sub-agent
+  spawn. New audit check "Orchestrator-/Agenten-Team-Regel vorhanden".
 
 ## Reference files
 
@@ -61,6 +80,8 @@ Load on demand:
 - `references/templates/coding-style.md` — coding style rules template
 - `references/templates/agent-patterns.md` — agent patterns rules template
 - `references/templates/api-security.md` — API security rules template
+- `references/features/*.md` — 16 in-depth feature modules (v17), load on demand
+  (index in `checklist.yaml` under `feature_modules`; module bodies are currently in German)
 
 ## Mode detection
 
@@ -108,30 +129,32 @@ Walk the user through each setting. For EVERY setting:
 
 Settings in this order:
 
-**2a) effortLevel: "xhigh"** (Opus-4.7 engineering default)
-Explain: "Controls how thoroughly Claude thinks before acting. With Opus 4.7,
-'xhigh' is the recommended value for engineering workflows — Claude then
-invests maximum reasoning tokens in planning and analysis. Allowed values:
-low, medium, high, xhigh, max. Higher = more thorough and more expensive."
+**2a) effortLevel: "high"** (Opus-4.8 default; "xhigh" as opt-in)
+Explain: "Controls how thoroughly Claude thinks before acting. With Opus 4.8,
+'high' is the default and the solid recommendation for everyday work. For
+especially deep engineering/analysis tasks you can deliberately go to 'xhigh'
+(more reasoning tokens — that was the 4.7 default). Allowed values in
+settings.json: low, medium, high, xhigh. Higher = more thorough and more
+expensive. 'max' is session-only (via /effort or CLAUDE_CODE_EFFORT_LEVEL) —
+it cannot be persisted in settings.json."
 Source: Anthropic model-config docs (code.claude.com/docs/en/model-config — "Adjust effort level")
-→ Ask: "Set effortLevel to 'xhigh'? (recommended for Max/Team/Enterprise plans: yes)"
+→ Ask: "Set effortLevel to 'high' (default)? Or deliberately 'xhigh' for deep engineering work?"
 
 Hint to user:
-"If you use pay-as-you-go or a Pro plan and want to save tokens, choose
-'high' or 'medium' instead. To change later, edit the value in
-`~/.claude/settings.json` — e.g.:
+"To change later, just overwrite the value in `~/.claude/settings.json` — e.g.:
 
-    \"effortLevel\": \"high\"
+    \"effortLevel\": \"xhigh\"
 
-Takes effect from the next session. There is no separate command —
-the value is read at startup."
+Takes effect from the next session. There is no separate command — the value
+is read at startup (session-only goes through /effort)."
 
-**2b) Adaptive Thinking — do NOT disable on Opus 4.7**
+**2b) Adaptive Reasoning — do NOT disable on Opus 4.7/4.8**
 Explain: "Opus 4.6 / Sonnet 4.6 had the 'adaptive thinking regression'
 (GitHub Issue #2654): Claude systematically underestimated complexity and
 cut reasoning short. Previous workaround: `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1`.
-Opus 4.7 uses adaptive thinking permanently and reliably — fixed thinking
-budgets no longer exist, the flag has no effect. So do NOT set it."
+Opus 4.7 and 4.8 use adaptive reasoning permanently and reliably — fixed
+thinking budgets no longer exist, and the flag has no effect on 4.7/4.8 at all
+(only on 4.6). So for a 4.8 setup do NOT set it."
 Source: Anthropic model-config docs — "Adaptive reasoning and fixed thinking budgets"
 → Action: If the env variable is still set in the existing settings.json,
 SHOW a warning and offer to remove it.
@@ -149,13 +172,16 @@ your preferences, corrections, project context. Stored per repository
 in `~/.claude/projects/<repo>/memory/` and loaded at session start."
 → Ask: "Enable auto memory? (recommended: yes)"
 
-**2e) Agent Teams — GA since Claude Code v2.1.111**
-Explain: "Agent Teams (autonomous sub-agents for complex tasks) are
-general available since Claude Code v2.1.111. The previous
-`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` flag is obsolete and should be
-removed — the feature is now on by default."
-→ Action: If the env variable is still set in the existing settings.json,
-SHOW a warning and offer to remove it.
+**2e) Agent Teams — still experimental (optional opt-in)**
+Explain: "Agent Teams (multiple cooperating Claude Code sessions sharing a
+task list) are, per the docs, still EXPERIMENTAL and off by default. Do NOT
+confuse them with sub-agents — those run without a flag. If you want to try
+Agent Teams, set `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` (in the env block of
+settings.json or as a shell variable). Optionally `CLAUDE_CODE_SUBAGENT_MODEL`
+controls the model for sub-agents and teams. This flag is NOT a deprecation
+case — it deliberately turns the feature on."
+Source: Anthropic agent-teams docs (code.claude.com/docs/en/agent-teams)
+→ Ask: "Enable Agent Teams? (optional, experimental — default: no)"
 
 **2f) Sandboxing**
 Explain: "Defines which files and network endpoints Claude can reach.
@@ -166,12 +192,16 @@ If yes, ask:
 - "Which paths should Claude NOT read? (default: ~/.ssh/**, ~/.aws/**, ~/.env)"
 - "Which domains should Claude be allowed to reach? (default: registry.npmjs.org, github.com)"
 
-**2g) Permission Mode**
-Explain: "Controls how Claude handles risky actions. 'manual': Claude
-asks on every risky action (safe, recommended for beginners). 'auto':
-Claude decides on its own (faster, for experienced users). 'custom':
-own allow/deny lists (most control)."
-→ Ask: "Permission mode? (manual/auto/custom)"
+**2g) Permission Mode** (CORRECTED in v17 — the old values manual/auto/custom were wrong)
+Explain: "Set via `permissions.defaultMode`. The real values are: **default**
+(asks on first use of each tool — the safe standard), **acceptEdits** (file edits +
+common FS commands automatic — focused sessions), **plan** (read-only / read-only
+shell, no source-file changes), **auto** (auto-approve with safety checks, research
+preview — use with care), **dontAsk** (auto-deny unless pre-approved),
+**bypassPermissions** (skips ALL prompts — container/VM only)."
+Source: code.claude.com/docs/en/permissions — full text: `references/features/permission-modes-korrektur.md`
+→ Ask: "Permission mode? (default/acceptEdits/plan/auto/dontAsk/bypassPermissions — default: default)"
+Note: In shared/managed settings, set `permissions.disableBypassPermissionsMode` and `permissions.disableAutoMode` to "disable".
 
 If settings.json already exists:
 - Show diff between IST and SOLL
@@ -238,10 +268,51 @@ If yes, add:
 - read-before-write
 - edit-over-write
 - verification-first (tests before implementation)
-- effortLevel: xhigh in project settings
+- effortLevel: high (or `xhigh` for deep tasks) anchored in project settings
 
 **Step 3: Summary**
 Show what was created / changed with paths.
+
+---
+
+## Advanced setup building blocks (v17 feature modules)
+
+Beyond the core setup there are 16 in-depth modules under `references/features/`.
+Each was individually verified against the official docs and contains: a guided
+explanation (WHY), a machine-readable reference block, and its own audit criteria.
+The skill loads the matching module on demand.
+
+> The section framing here is English, but note: the module bodies themselves
+> are currently in German. Do not assume English module files exist.
+
+**Approach:** Load ONLY the module the user currently needs (token-friendly) —
+e.g. if they say "set up MCP", read `references/features/mcp-konfiguration-mcp-json.md`
+and follow it. In PROJEKT mode, after the base setup, **MCP servers** and
+**subagents** are the recommended next steps.
+
+**Critical (core gaps):**
+- **MCP servers (.mcp.json)** → `references/features/mcp-konfiguration-mcp-json.md`
+- **Subagents (.claude/agents/)** → `references/features/subagent-definitionen-claude-agents.md`
+- **Hook events (complete, 30 events)** → `references/features/hook-events-vollstaendig.md`
+- **Permission modes** → `references/features/permission-modes-korrektur.md`
+- **Sandbox setup (Linux/WSL2 + modes)** → `references/features/sandbox-setup-linux-wsl2-modi.md`
+
+**Important:**
+- **Model pinning & provider overrides** → `references/features/model-pinning-provider-overrides.md`
+- **additionalDirectories / working dirs** → `references/features/additionaldirectories-working-dirs-multi.md`
+- **Managed/enterprise settings & precedence** (admin) → `references/features/managed-enterprise-settings-precedence.md`
+- **Custom output styles** → `references/features/custom-output-styles.md`
+- **CLAUDE.md best practices** → `references/features/claude-md-best-practices.md`
+
+**Nice-to-have:**
+- **Checkpointing & rewind** → `references/features/checkpointing-rewind.md`
+- **Hook types (command/http/mcp_tool/prompt/agent)** → `references/features/hook-typen-command-http-mcp-tool-prompt-.md`
+- **Skills (.claude/skills/)** → `references/features/skills-claude-skills-ordnerstruktur-skil.md`
+- **Permission granularity (Bash/Read/Edit/WebFetch/MCP)** → `references/features/permission-granularitaet-bash-read-edit-.md`
+- **MCP advanced (OAuth, tool search)** → `references/features/mcp-advanced-oauth-tool-search.md`
+- **Worktrees / housekeeping / auth keys** → `references/features/worktrees-housekeeping-auth-keys.md`
+
+The complete index lives in `references/checklist.yaml` under `feature_modules`.
 
 ---
 
@@ -269,15 +340,25 @@ For each check:
 
 **Global checks:**
 - settings.json exists and contains: autoMemoryEnabled, effortLevel
-- effortLevel is "xhigh" (Opus-4.7 recommendation) — "high"/"medium" gives a warning, not an error
+- effortLevel is set — the Opus-4.8 default is "high"; "xhigh" is a legitimate
+  opt-in (not an error), "medium"/"low" give a warning. "max" does NOT belong
+  in settings.json.
 - **Deprecation warning:** `CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING` must NOT be set
-  (obsolete since Opus 4.7). If present: warning + removal offer.
-- **Deprecation warning:** `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` must NOT be set
-  (GA since Claude Code v2.1.111). If present: warning + removal offer.
+  (only affects Opus 4.6, no effect on 4.7/4.8). If present: warning + removal offer.
+- **Deprecation warning:** `ANTHROPIC_SMALL_FAST_MODEL` must NOT be set
+  (deprecated → `ANTHROPIC_DEFAULT_HAIKU_MODEL`). If present: warning + migration offer.
+- NO finding anymore for `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`: Agent Teams are
+  still experimental, the flag turns them on deliberately — its presence is OK.
 - Thinking summaries enabled (showThinkingSummaries)
 - Sandboxing configured (or deliberately disabled)
+- **Permission mode correct:** `permissions.defaultMode` (if set) is one of
+  default/acceptEdits/plan/auto/dontAsk/bypassPermissions — NOT manual/custom (v17 fix)
 - CLAUDE.md exists, under 200 lines, has secrets policy
 - Read-requirement rule present (edit-over-write, read-before-edit)
+
+**Module audits (v17):** For deeper audits, load the respective
+`references/features/<module>.md` — each module brings its own audit criteria
+(e.g. MCP, sandbox, managed settings).
 
 **Project checks:**
 - .claudeignore exists and contains .env
@@ -292,19 +373,20 @@ Format:
 ```
 ╔══════════════════════════════════════════════╗
 ║  CLAUDE CODE BEST PRACTICE AUDIT             ║
-║  Checklist v15 — April 2026 (Opus 4.7)       ║
+║  Checklist v17 — June 2026 (Opus 4.8)        ║
 ╚══════════════════════════════════════════════╝
 
 GLOBAL (~/.claude/)
   ✓ settings.json present
   ✓ autoMemoryEnabled: true
-  ⚠ effortLevel: high (recommended for Opus 4.7: xhigh)
-  ⚠ CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING still set (obsolete since 4.7)
-  ⚠ CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS still set (GA since v2.1.111)
+  ✓ effortLevel: high (Opus-4.8 default; xhigh would be opt-in)
+  ⚠ CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING still set (no effect on 4.7/4.8)
+  ⚠ ANTHROPIC_SMALL_FAST_MODEL still set (deprecated → ANTHROPIC_DEFAULT_HAIKU_MODEL)
   ✗ Thinking summaries not enabled
   ✗ Sandboxing not configured
   ✓ CLAUDE.md present (142 lines)
   ✓ Secrets policy present
+  ✓ Orchestrator / agent-team rule present
 
 PROJEKT (/Users/.../my-project/)
   ✓ .claudeignore present
@@ -315,7 +397,7 @@ PROJEKT (/Users/.../my-project/)
   ✗ Hooks not configured
   ✗ Guard script missing
 
-RESULT: 5/18 checks passed, 3 deprecation warnings
+RESULT: 6/19 checks passed, 2 deprecation warnings
 ```
 
 **Step 4: Offer corrections**

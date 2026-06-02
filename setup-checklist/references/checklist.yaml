@@ -1,20 +1,48 @@
 # ============================================================
-# Claude Code Best Practice Checkliste v15
+# Claude Code Best Practice Checkliste v17
 # Maschinenlesbare Version — Source of Truth fuer den Setup-Skill
 # ============================================================
-# Basiert auf: claude_code_checkliste_v15 (OWLIST GmbH, April 2026)
-# Quellen: Anthropic Model-Config Docs (code.claude.com/docs/en/model-config),
-#          "What's new in Claude Opus 4.7" (platform.claude.com)
-# Historie v14 → v15 (Opus 4.7 Update):
-#   - effortLevel: "high" → "xhigh" (Opus 4.7 Default fuer Engineering)
-#   - CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING entfernt (obsolet: 4.7 nutzt immer
-#     Adaptive Thinking, keine Fixed-Budgets mehr)
-#   - CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS entfernt (GA seit Claude Code v2.1.111)
-#   - 1M-Context-Hinweis neu (Opus 4.7 Max/Team/Enterprise automatisch)
+# Basiert auf: claude_code_checkliste_v17 (OWLIST GmbH, Juni 2026)
+# Quellen (alle Claims am 2026-06-02 gegen die offizielle Doku verifiziert):
+#   - Model Config:   code.claude.com/docs/en/model-config
+#   - Settings:       code.claude.com/docs/en/settings
+#   - Agent Teams:    code.claude.com/docs/en/agent-teams
+#   - Hooks:          code.claude.com/docs/en/hooks
+#   - Env Variables:  code.claude.com/docs/en/env-vars
+# Historie v15 → v16 (Opus 4.8 Update):
+#   - Default-Modell ist jetzt Opus 4.8 (Max, Team Premium, Enterprise, API).
+#   - effortLevel: Opus-4.8-Default ist "high" (nicht mehr "xhigh"; xhigh war der
+#     4.7-Default). Empfehlung: "high" als Default, "xhigh" als bewusstes Opt-in
+#     fuer tiefe Engineering-Tasks. Werte: low, medium, high, xhigh, max.
+#   - KORREKTUR ggue. v15: Agent Teams sind NICHT GA — laut Doku weiterhin
+#     experimentell und per Default deaktiviert. Das Flag
+#     CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 ist NICHT obsolet, sondern noetig
+#     um die Funktion einzuschalten. (v15 behauptete faelschlich "GA seit
+#     v2.1.111, Flag obsolet".)
+#   - CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING bleibt obsolet — wirkt nur auf
+#     Opus 4.6/Sonnet 4.6, NICHT auf Opus 4.7 und 4.8 (die nutzen immer
+#     Adaptive Reasoning).
+#   - Neue, in der Doku verifizierte optionale settings.json-Keys ergaenzt
+#     (siehe global.optional_settings).
+#   - Neue Hook-Events ergaenzt (TeammateIdle, TaskCreated, TaskCompleted,
+#     FileChanged, SubagentStart/Stop, PreCompact/PostCompact).
+#   - ANTHROPIC_SMALL_FAST_MODEL -> ANTHROPIC_DEFAULT_HAIKU_MODEL (deprecated).
+#   - 1M-Context: Syntax opus[1m]/sonnet[1m]; Abschalten via
+#     CLAUDE_CODE_DISABLE_1M_CONTEXT=1.
+# Historie v16 → v17 (Vollstaendigkeits-Pass, Juni 2026):
+#   - KORREKTUR Permission-Modes: die alten Werte manual/auto/custom waren falsch.
+#     Echte permissions.defaultMode-Werte: default, acceptEdits, plan, auto,
+#     dontAsk, bypassPermissions (siehe global.permission_mode).
+#   - 16 vertiefende Feature-Module ergaenzt unter references/features/*.md
+#     (MCP, Subagents, vollstaendige Hook-Events, Sandbox-Setup, Model-Pinning,
+#     additionalDirectories, Managed/Enterprise, Output Styles, CLAUDE.md-Best-
+#     Practices, Checkpointing, Hook-Typen, Skills, Permission-Granularitaet,
+#     MCP-Advanced, Worktrees/Housekeeping/Auth). Index unter feature_modules.
+#     Jedes Modul wurde einzeln Draft -> adversarial gegen die Doku verifiziert.
 # ============================================================
 
-version: "15"
-date: "2026-04-21"
+version: "17"
+date: "2026-06-02"
 
 # ============================================================
 # TEIL 1: Globales Setup (pro Rechner)
@@ -25,7 +53,7 @@ global:
   settings:
     "$schema": "https://json.schemastore.org/claude-code-settings.json"
     autoMemoryEnabled: true
-    effortLevel: "xhigh"
+    effortLevel: "high"
     showThinkingSummaries: true
     permissions:
       allow:
@@ -34,9 +62,46 @@ global:
         - "Bash(npm *)"
       deny:
         - "Bash(rm -rf /)"
-    # Hinweis: Bei Pay-as-you-go / Pro-Abo kann effortLevel auf "high" oder
-    # "medium" reduziert werden (spart Tokens, leicht flachere Reasoning-Tiefe).
-    # Erlaubte Werte: low, medium, high, xhigh, max
+    # effortLevel — Opus-4.8-Default ist "high". Empfehlung dieser Checkliste:
+    #   - "high"  = Default, gute Reasoning-Tiefe bei moderaten Token-Kosten
+    #   - "xhigh" = bewusstes Opt-in fuer tiefe Engineering-/Analyse-Tasks
+    #               (mehr Reasoning-Tokens; war der 4.7-Default)
+    #   - "max"   = nur Session-only (per /effort oder CLAUDE_CODE_EFFORT_LEVEL),
+    #               NICHT in settings.json persistierbar
+    # Erlaubte Werte: low, medium, high, xhigh. Quelle: model-config Doku.
+
+  # --- Optionale settings.json-Keys (alle in der offiziellen Doku verifiziert) ---
+  # Kein Pflichtteil — der Skill bietet sie als bewusste Opt-ins an und erklaert
+  # jeweils das WARUM. Quelle: code.claude.com/docs/en/settings (bzw. model-config
+  # / agent-teams wo vermerkt).
+  optional_settings:
+    - key: "alwaysThinkingEnabled"
+      description: "Extended Thinking per Default fuer alle Sessions aktivieren."
+    - key: "defaultMode"
+      description: >
+        Default-Permission-Mode: default, acceptEdits, plan, auto, dontAsk,
+        bypassPermissions. 'auto' nutzt einen Classifier (safe auto-approve,
+        riskante Aktionen blockiert).
+    - key: "outputStyle"
+      description: "System-Prompt-Anpassung ueber einen Output-Style."
+    - key: "skillOverrides"
+      description: "Pro-Skill-Sichtbarkeit: on, name-only, user-invocable-only, off."
+    - key: "skillListingBudgetFraction"
+      description: "Context-Anteil fuer das Skill-Listing (Default 0.01 = 1%)."
+    - key: "workflowKeywordTriggerEnabled"
+      description: "Ob das Wort 'workflow' im Prompt einen Dynamic Workflow ausloest (Default true)."
+    - key: "tui"
+      description: "Terminal-UI-Renderer: fullscreen oder default."
+    - key: "viewMode"
+      description: "Transcript-Ansicht beim Start: default, verbose oder focus."
+    - key: "editorMode"
+      description: "Key-Bindings: normal oder vim."
+    - key: "modelOverrides"
+      description: "Anthropic-Model-IDs auf Provider-IDs mappen (Bedrock/Vertex/Foundry). Quelle: model-config."
+    - key: "teammateMode"
+      description: >
+        Anzeige der Agent-Team-Teammates: auto, in-process oder tmux. Nur
+        relevant wenn Agent Teams aktiviert sind. Quelle: agent-teams Doku.
 
   # --- Sandboxing (empfohlen) ---
   sandbox:
@@ -55,16 +120,28 @@ global:
         - "registry.npmjs.org"
         - "github.com"
 
-  # --- Permission Mode ---
+  # --- Permission Mode (KORRIGIERT in v17) ---
+  # Gesetzt ueber den Settings-Key permissions.defaultMode. Die frueheren Werte
+  # manual/auto/custom waren FALSCH. Details: references/features/permission-modes-korrektur.md
   permission_mode:
-    default: "manual"
+    setting_key: "permissions.defaultMode"
+    default: "default"
     options:
-      - mode: "manual"
-        description: "Claude fragt bei jeder riskanten Aktion (Standard, sicher)"
+      - mode: "default"
+        description: "Fragt bei Erstnutzung jedes Tools nach (sicherer Standard)"
+      - mode: "acceptEdits"
+        description: "Akzeptiert Datei-Edits + gaengige FS-Befehle automatisch (fokussierte Sessions)"
+      - mode: "plan"
+        description: "Nur lesen + read-only Shell, keine Quelldatei-Aenderungen (Explorieren/Planen)"
       - mode: "auto"
-        description: "Claude entscheidet selbst (fuer erfahrene Nutzer)"
-      - mode: "custom"
-        description: "Eigene allow/deny-Listen (meiste Kontrolle)"
+        description: "Auto-Approve mit Hintergrund-Safety-Checks (Research Preview — mit Vorsicht)"
+      - mode: "dontAsk"
+        description: "Auto-Deny ausser vorab via permissions.allow/permissions freigegeben (Allowlist-Betrieb)"
+      - mode: "bypassPermissions"
+        description: "Ueberspringt ALLE Prompts — nur in isolierten Umgebungen (Container/VM)"
+    sperren_in_managed:
+      "permissions.disableBypassPermissionsMode": "disable"
+      "permissions.disableAutoMode": "disable"
 
   # --- CLAUDE.md Template ---
   claude_md:
@@ -79,6 +156,16 @@ global:
           - "Antworten kurz und direkt, keine Zusammenfassungen am Ende"
           - "Bestehende Dateien IMMER mit Edit aendern, Write nur fuer neue Dateien"
           - "Vor JEDER Code-Aenderung: betroffene Dateien VOLLSTAENDIG lesen"
+      - name: "Arbeitsweise: Agenten-Team"
+        description: >
+          Orchestrator-Pflicht + 3-stufiger Ausfuehrungsmodus. Verankert, dass
+          Claude substanzielle Arbeit an Sub-Agents delegiert und nie als Solist
+          arbeitet. Fuer kleine Aufgaben existiert der `linear`-Modus als legitime
+          Ausnahme.
+        rules:
+          - "Du selbst bist IMMER Orchestrator, nie Solist — substanzielle Ausfuehrung wird an Sub-Agents delegiert"
+          - "Drei Ausfuehrungsmodi: agentic (Lead + parallele Sub-Agents, komplex) / sub-agents (sequentiell, mittel) / linear (direkt ohne Unterbau, klein)"
+          - "Jeder Sub-Agent bekommt beim Spawn ein Mini-Briefing: Rolle, Kontext (welche Dateien, welches Vorwissen), konkrete Aufgabe, optional Skill"
       - name: "Secrets-Policy"
         levels:
           minimum:
@@ -162,6 +249,24 @@ projekt:
       - matcher: ""
         command: 'echo "Reminder: /wrap-up ausfuehren!"'
         description: "Erinnerung am Session-Ende"
+    # Verfuegbare Hook-Events (Stand Juni 2026, gegen hooks-Doku verifiziert).
+    # Die obigen drei sind die Standard-Empfehlung; die folgenden sind neuer und
+    # situativ nuetzlich:
+    available_events:
+      - name: "PreToolUse / PostToolUse"
+        note: "Vor/nach Tool-Aufruf (z.B. Guard, Auto-Formatter)."
+      - name: "Stop"
+        note: "Session-Ende."
+      - name: "SubagentStart / SubagentStop"
+        note: "Wenn ein Sub-Agent startet/endet. SubagentStop kann blocken."
+      - name: "TeammateIdle"
+        note: "Agent-Teams: Teammate geht gleich in Idle. Kann blocken."
+      - name: "TaskCreated / TaskCompleted"
+        note: "Task-Management (Agent Teams / Task-Tool). Koennen blocken."
+      - name: "FileChanged"
+        note: "Beobachtete Datei aendert sich auf der Platte (z.B. direnv-Reload). Nicht blockend."
+      - name: "PreCompact / PostCompact"
+        note: "Vor/nach Context-Compaction."
 
   # --- Rules ---
   rules:
@@ -206,25 +311,55 @@ projekt:
     exit 0
 
   # --- Optional: Coding Governance ---
-  # --- Thinking Depth (Opus 4.7: Adaptive Thinking ist jetzt gut) ---
+  # --- Thinking Depth (Opus 4.7/4.8: Adaptive Reasoning ist Standard) ---
   thinking_depth:
     description: >
-      Mit Opus 4.7 wurde das Adaptive-Thinking-System neu aufgesetzt — die
-      "Adaptive Thinking Regression" aus Sommer 2025 (Issue #2654, AMD/Laurenzo)
-      gilt hier nicht mehr. Opus 4.7 nutzt Adaptive Thinking permanent und hat
-      keine Fixed-Budget-Mode mehr. Die Wirksamkeits-Kombination heute:
-      effortLevel: xhigh + showThinkingSummaries. Die alte ENV-Variable
-      CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING ist obsolet und sollte entfernt
-      werden (sie greift in 4.7 nicht mehr und verwirrt bei Audits).
-    source: "Anthropic Model-Config Docs (code.claude.com/docs/en/model-config), What's new in Claude Opus 4.7"
+      Opus 4.7 und 4.8 nutzen permanent Adaptive Reasoning — die "Adaptive
+      Thinking Regression" aus Sommer 2025 (Issue #2654, AMD/Laurenzo) gilt hier
+      nicht mehr, und es gibt keinen Fixed-Thinking-Budget-Mode. Die Steuerung
+      laeuft heute ausschliesslich ueber effortLevel + showThinkingSummaries.
+      Die ENV-Variable CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING wirkt NUR auf
+      Opus 4.6 / Sonnet 4.6 und ist auf 4.7/4.8 wirkungslos — bei einem reinen
+      4.8-Setup sollte sie nicht gesetzt sein (verwirrt bei Audits).
+    source: "Anthropic Model-Config Docs (code.claude.com/docs/en/model-config)"
     settings:
-      effortLevel: "xhigh"
+      effortLevel: "high"   # Default; "xhigh" als Opt-in fuer tiefe Tasks
       showThinkingSummaries: true
     deprecated_env:
       - name: "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING"
-        reason: "Obsolet mit Opus 4.7 — greift nur bei Opus 4.6 / Sonnet 4.6"
-      - name: "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"
-        reason: "Agent Teams sind GA seit Claude Code v2.1.111 — Flag ueberfluessig"
+        reason: "Wirkungslos auf Opus 4.7/4.8 — greift nur bei Opus 4.6 / Sonnet 4.6"
+      - name: "ANTHROPIC_SMALL_FAST_MODEL"
+        reason: "Deprecated — ersetzt durch ANTHROPIC_DEFAULT_HAIKU_MODEL"
+
+  # --- Agent Teams (KORREKTUR ggue. v15: NICHT GA, weiterhin experimentell) ---
+  agent_teams:
+    description: >
+      Agent Teams (mehrere kooperierende Claude-Code-Sessions mit gemeinsamer
+      Task-Liste) sind laut offizieller Doku weiterhin EXPERIMENTELL und per
+      Default deaktiviert. Sie sind NICHT mit Sub-Agents zu verwechseln
+      (Sub-Agents laufen unveraendert ohne Flag). v15 behauptete faelschlich
+      "GA seit v2.1.111, Flag obsolet" — das ist falsch.
+    status: "experimental"
+    enable_env:
+      name: "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"
+      value: "1"
+      note: "Noetig um Agent Teams einzuschalten — NICHT obsolet."
+    related:
+      - name: "CLAUDE_CODE_SUBAGENT_MODEL"
+        note: "Steuert das Modell fuer Sub-Agents und Agent Teams."
+    source: "Anthropic Agent-Teams Doku (code.claude.com/docs/en/agent-teams)"
+
+  # --- Extended Context (1M Token) ---
+  extended_context:
+    description: >
+      Opus/Sonnet unterstuetzen 1M-Token-Context. Auf Max/Team/Enterprise ist
+      1M-Context fuer Opus im Abo enthalten und automatisch aktiv. Manuell ueber
+      das [1m]-Suffix am Model-Alias waehlbar.
+    syntax: "/model opus[1m]   bzw.   /model sonnet[1m]"
+    disable_env:
+      name: "CLAUDE_CODE_DISABLE_1M_CONTEXT"
+      value: "1"
+    source: "Anthropic Model-Config Docs (code.claude.com/docs/en/model-config)"
 
   coding_governance:
     description: "Erweiterte Regeln fuer Softwareentwicklungsprojekte"
@@ -258,27 +393,34 @@ audit:
       type: "json_value"
       key: "autoMemoryEnabled"
       expected: true
-    - check: "effortLevel ist xhigh (Opus 4.7 Default)"
+    - check: "effortLevel ist gesetzt (Opus-4.8-Default: high)"
       path: "~/.claude/settings.json"
       type: "json_value"
       key: "effortLevel"
-      expected: "xhigh"
-      note: "Werte high/medium/low sind bei Pay-as-you-go ok — Warnung, kein Fehler"
-    - check: "Adaptive-Thinking-Flag NICHT mehr gesetzt (obsolet mit Opus 4.7)"
+      expected: "high"
+      note: >
+        "high" ist der Opus-4.8-Default und die Empfehlung. "xhigh" ist ein
+        legitimes Opt-in fuer tiefe Engineering-Tasks (kein Fehler).
+        "medium"/"low" geben eine Warnung, kein Fehler. "max" ist nur
+        Session-only und gehoert NICHT in settings.json.
+    - check: "Adaptive-Thinking-Flag NICHT gesetzt (wirkungslos auf Opus 4.7/4.8)"
       path: "~/.claude/settings.json"
       type: "json_value_absent"
       key: "env.CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING"
       warn_if_present: >
-        Diese Env-Variable ist mit Opus 4.7 obsolet — sie wurde fuer die
-        "Adaptive Thinking Regression" in Opus 4.6/Sonnet 4.6 eingefuehrt
-        und greift in 4.7 nicht mehr. Empfehlung: aus settings.json entfernen.
-    - check: "Experimental-Agent-Teams-Flag NICHT mehr gesetzt (GA seit v2.1.111)"
+        Diese Env-Variable wirkt nur auf Opus 4.6/Sonnet 4.6 und ist auf
+        Opus 4.7/4.8 wirkungslos. Bei einem 4.8-Setup aus settings.json
+        entfernen (vermeidet Verwirrung bei Audits).
+    - check: "ANTHROPIC_SMALL_FAST_MODEL NICHT gesetzt (deprecated)"
       path: "~/.claude/settings.json"
       type: "json_value_absent"
-      key: "env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"
+      key: "env.ANTHROPIC_SMALL_FAST_MODEL"
       warn_if_present: >
-        Agent Teams sind seit Claude Code v2.1.111 GA. Das Experimental-Flag
-        wird nicht mehr benoetigt. Empfehlung: aus settings.json entfernen.
+        Deprecated — durch ANTHROPIC_DEFAULT_HAIKU_MODEL ersetzen.
+    # HINWEIS: Kein Check mehr auf CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS.
+    # KORREKTUR ggue. v15: Agent Teams sind NICHT GA; das Flag ist KEIN
+    # Deprecation-Fall, sondern schaltet die (weiterhin experimentelle)
+    # Funktion bewusst ein. Vorhandensein ist also OK, kein Audit-Befund.
     - check: "Thinking-Summaries aktiviert"
       path: "~/.claude/settings.json"
       type: "json_value"
@@ -295,6 +437,15 @@ audit:
       path: "~/.claude/CLAUDE.md"
       type: "contains"
       pattern: "Secrets"
+    - check: "Orchestrator-/Agenten-Team-Regel vorhanden"
+      path: "~/.claude/CLAUDE.md"
+      type: "contains"
+      pattern: "Orchestrator"
+      note: >
+        Prueft ob die Pflichtregel "Claude ist immer Orchestrator, nie Solist"
+        in der globalen CLAUDE.md verankert ist (seit 2026-04-23 Best Practice).
+        Ergaenzung: auch Sub-Agents-Modus-Definition (agentic/sub-agents/linear)
+        sollte in derselben Sektion stehen.
 
   projekt:
     - check: ".claudeignore existiert"
@@ -329,3 +480,91 @@ audit:
       path: "CLAUDE.md"
       type: "contains"
       pattern: "lesen"
+
+# ============================================================
+# FEATURE-MODULE (v17) — vertiefende, einzeln verifizierte Setup-Bausteine
+# Volltext je Modul: references/features/<datei>. Der Skill laedt das passende
+# Modul on-demand, wenn der Nutzer das Thema einrichten/auditieren will.
+# Tiers: kritisch (Kernluecken) > wichtig > nice-to-have.
+# ============================================================
+feature_modules:
+  - name: "MCP-Server (.mcp.json)"
+    file: "references/features/mcp-konfiguration-mcp-json.md"
+    mode: "projekt+global"
+    tier: "kritisch"
+    status: "include-with-fixes"
+  - name: "Subagents (.claude/agents/)"
+    file: "references/features/subagent-definitionen-claude-agents.md"
+    mode: "projekt"
+    tier: "kritisch"
+    status: "include-with-fixes"
+  - name: "Hook-Events (vollstaendig)"
+    file: "references/features/hook-events-vollstaendig.md"
+    mode: "projekt+global"
+    tier: "kritisch"
+    status: "include-with-fixes"
+  - name: "Permission-Modes"
+    file: "references/features/permission-modes-korrektur.md"
+    mode: "global"
+    tier: "kritisch"
+    status: "include"
+  - name: "Sandbox-Setup"
+    file: "references/features/sandbox-setup-linux-wsl2-modi.md"
+    mode: "global+projekt"
+    tier: "kritisch"
+    status: "include"
+  - name: "Model-Pinning & Provider"
+    file: "references/features/model-pinning-provider-overrides.md"
+    mode: "global"
+    tier: "wichtig"
+    status: "include"
+  - name: "additionalDirectories"
+    file: "references/features/additionaldirectories-working-dirs-multi.md"
+    mode: "global+projekt"
+    tier: "wichtig"
+    status: "include-with-fixes"
+  - name: "Managed/Enterprise"
+    file: "references/features/managed-enterprise-settings-precedence.md"
+    mode: "global (admin)"
+    tier: "wichtig"
+    status: "include-with-fixes"
+  - name: "Output Styles"
+    file: "references/features/custom-output-styles.md"
+    mode: "projekt+global"
+    tier: "wichtig"
+    status: "include"
+  - name: "CLAUDE.md Best Practices"
+    file: "references/features/claude-md-best-practices.md"
+    mode: "projekt"
+    tier: "wichtig"
+    status: "include"
+  - name: "Checkpointing & Rewind"
+    file: "references/features/checkpointing-rewind.md"
+    mode: "operator"
+    tier: "nice-to-have"
+    status: "include-with-fixes"
+  - name: "Hook-Typen"
+    file: "references/features/hook-typen-command-http-mcp-tool-prompt-.md"
+    mode: "projekt+global"
+    tier: "nice-to-have"
+    status: "include-with-fixes"
+  - name: "Skills (.claude/skills/)"
+    file: "references/features/skills-claude-skills-ordnerstruktur-skil.md"
+    mode: "projekt+global"
+    tier: "nice-to-have"
+    status: "include-with-fixes"
+  - name: "Permission-Granularitaet"
+    file: "references/features/permission-granularitaet-bash-read-edit-.md"
+    mode: "global+projekt"
+    tier: "nice-to-have"
+    status: "include"
+  - name: "MCP Advanced"
+    file: "references/features/mcp-advanced-oauth-tool-search.md"
+    mode: "global+projekt"
+    tier: "nice-to-have"
+    status: "include-with-fixes"
+  - name: "Worktrees/Housekeeping/Auth"
+    file: "references/features/worktrees-housekeeping-auth-keys.md"
+    mode: "projekt+global"
+    tier: "nice-to-have"
+    status: "include-with-fixes"

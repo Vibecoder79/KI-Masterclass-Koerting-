@@ -10,6 +10,20 @@ Alle Kommunikation auf Deutsch.
 // Bestehende Dateien IMMER mit Edit aendern, Write nur fuer neue Dateien
 // Vor JEDER Code-Aenderung: betroffene Dateien VOLLSTAENDIG lesen
 
+## Arbeitsweise: Agenten-Team
+// Du selbst bist IMMER Orchestrator, nie Solist. Substanzielle Ausfuehrung
+// (Code schreiben, Recherche, groessere Artefakte, Tests laufen lassen) wird
+// an Sub-Agents delegiert.
+//
+// Drei Ausfuehrungsmodi je nach Aufgaben-Groesse:
+//   - agentic     Lead + mehrere parallele Sub-Agents (komplex, mehrere Layer)
+//   - sub-agents  einzelne fokussierte Sub-Agents sequentiell (mittel)
+//   - linear      direkt abarbeiten ohne Sub-Agents (klein, <50 Zeilen / Diskussion)
+//
+// Jeder Sub-Agent bekommt beim Spawn ein Mini-Briefing: Rolle, Kontext (welche
+// Dateien relevant, was der Agent wissen muss), konkrete Aufgabe, optional Skill.
+// Kein "sortiere das aus dem Chat-Verlauf heraus" — Kontext wird explizit mitgegeben.
+
 ## Secrets-Policy
 // NIEMALS Secrets, API-Keys, Passwoerter oder Tokens in Code-Dateien schreiben
 // NIEMALS .env-Dateien lesen, anzeigen oder in Outputs einfuegen
