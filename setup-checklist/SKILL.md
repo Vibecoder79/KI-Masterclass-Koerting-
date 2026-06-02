@@ -1,6 +1,6 @@
 ---
 name: setup-checklist
-version: 1.5.0
+version: 1.5.1
 description: >
   Nutze diesen Skill wenn der Nutzer Claude Code einrichten, konfigurieren oder
   Best Practices umsetzen moechte. Ausloeser: "setup", "einrichten", "bootstrapping",
